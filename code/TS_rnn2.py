@@ -1,3 +1,6 @@
+"""
+run seq to 1 model, use original metric 4 as score
+"""
 import torch
 import pandas as pd
 import shapely
