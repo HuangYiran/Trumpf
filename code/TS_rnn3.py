@@ -19,10 +19,11 @@ from torch.optim import lr_scheduler
 
 def main():
     # set path
-    train_x = '../data/rnn_train_x.npy'
-    train_y = '../data/rnn_train_y.npy'
-    test_x = '../data/rnn_test_x.npy'
-    test_y = '../data/rnn_test_y.npy'
+    root = '/smartdata/hj7422/Documents/Workplace/Trumpf/'
+    train_x = root + 'data/rnn_train_x.npy'
+    train_y = root + 'data/rnn_train_y.npy'
+    test_x = root + 'data/rnn_test_x.npy'
+    test_y = root + 'data/rnn_test_y.npy'
     # set hype params
     num_epochs = 2000
     batch_size = 32
@@ -34,10 +35,10 @@ def main():
     # set the scheduler
     lamb1 = lambda x: 0.01 * 0.1**((x%100)//30)
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda = lamb1)
-    run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num_epochs, batch_size, verbose = True)
+    run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num_epochs, batch_size, root, verbose = True)
     
 
-def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num_epochs, batch_size, verbose = True):
+def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num_epochs, batch_size, root = './', verbose = True):
     # loda data
     train = Data(train_x, train_y)
     test = Data(test_x, test_y)
@@ -95,12 +96,12 @@ def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num
         mod_wi_l1.append(model.rnn.weight_ih_l1)
         # just for test
         # save model
-        if epoch % 1 == 0:
+        if epoch % 10 == 0:
             # save model
-            torch.save(model, '../models/rnn_' + str(epoch) + '.pkl')
+            torch.save(model, root + 'models/rnn_' + str(epoch) + '.pkl')
             # save result
-            torch.save(test_loss, '../results/test_loss.pkl')
-            torch.save(test_sig, '../results/test_sig.pkl')
+            torch.save(test_loss, root + 'results/test_loss.pkl')
+            torch.save(test_sig, root + 'results/test_sig.pkl')
             # save weight
             mod_wh_l0 = torch.stack(mod_wh_l0, dim = 0)
             mod_wh_l1 = torch.stack(mod_wh_l1, dim = 0)
@@ -114,10 +115,15 @@ def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num
             std_mod_wh_l1.append(mod_wh_l1.std(dim = 0))
             std_mod_wi_l0.append(mod_wh_l0.std(dim = 0))
             std_mod_wi_l1.append(mod_wh_l1.std(dim = 0))
-            torch.save(mean_mod_wh_l0, '../results/mean_mod_wh_l0')
-            torch.save(mean_mod_wh_l1, '../results/mean_mod_wh_l1')
-            torch.save(mean_mod_wi_l0, '../results/mean_mod_wi_l0')
-            torch.save(mean_mod_wi_l1, '../results/mean_mod_wi_l1')
+            torch.save(mean_mod_wh_l0, root + 'results/mean_mod_wh_l0')
+            torch.save(mean_mod_wh_l1, root + 'results/mean_mod_wh_l1')
+            torch.save(mean_mod_wi_l0, root + 'results/mean_mod_wi_l0')
+            torch.save(mean_mod_wi_l1, root + 'results/mean_mod_wi_l1')
+	    torch.save(std_mod_wh_l0, root + 'results/std_mod_wh_l0')
+            torch.save(std_mod_wh_l1, root + 'results/std_mod_wh_l1')
+            torch.save(std_mod_wi_l0, root + 'results/std_mod_wi_l0')
+            torch.save(std_mod_wi_l1, root + 'results/std_mod_wi_l1')
+
             mod_wh_l0 = []
             mod_wh_l1 = []
             mod_wi_l0 = []
