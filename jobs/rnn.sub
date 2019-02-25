@@ -1,0 +1,11 @@
+cmd = /smartdata/hj7422/Documents/Workplace/Trumpf/scripts/TS_rnn.sh
+request_memory = 16GB
+request_cpus = 8
++REQUESTED_WALLTIME = 72
+notify_user = ihuangyiran@icloud.com
+notification = Always
+when_to_transfer_output = ON_EXIT_OR_EVICT
+output = /smartdata/hj7422/Documents/Workplace/Trumpf/results/$(Cluster)-$(Process)_job.out
+error = /smartdata/hj7422/Documents/Workplace/Trumpf/errors/$(Cluster)-$(Process)_job.error
+log = /smartdata/hj7422/Documents/Workplace/Trumpf/log/$(Cluster)-$(Process)_job.log
+queue 1
