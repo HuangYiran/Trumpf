@@ -87,11 +87,11 @@ def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num
                         lo.data
                         ))
         test_lo = test_model(dl_test, model, loss)
-	train_lo = test_model(dl_train, model, loss)
+        train_lo = test_model(dl_train, model, loss)
         hit_rate = significant_test(dl_test, model, loss)
         # collect data
         test_loss.append(test_lo)
-	tra_loss.append(train_lo)
+        tra_loss.append(train_lo)
         test_sig.append(hit_rate)
         mod_wh_l0.append(model.rnn.weight_hh_l0)
         mod_wh_l1.append(model.rnn.weight_hh_l1)
@@ -104,7 +104,7 @@ def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num
             torch.save(model, root + 'models/rnn_' + str(epoch) + '.pkl')
             # save result
             torch.save(test_loss, root + 'results/test_loss.pkl')
-	    torch.save(tra_loss, root + 'results/train_loss.pkl')
+            torch.save(tra_loss, root + 'results/train_loss.pkl')
             torch.save(test_sig, root + 'results/test_sig.pkl')
             # save weight
             mod_wh_l0 = torch.stack(mod_wh_l0, dim = 0)
@@ -123,7 +123,7 @@ def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num
             torch.save(mean_mod_wh_l1, root + 'results/mean_mod_wh_l1')
             torch.save(mean_mod_wi_l0, root + 'results/mean_mod_wi_l0')
             torch.save(mean_mod_wi_l1, root + 'results/mean_mod_wi_l1')
-	    torch.save(std_mod_wh_l0, root + 'results/std_mod_wh_l0')
+            torch.save(std_mod_wh_l0, root + 'results/std_mod_wh_l0')
             torch.save(std_mod_wh_l1, root + 'results/std_mod_wh_l1')
             torch.save(std_mod_wi_l0, root + 'results/std_mod_wi_l0')
             torch.save(std_mod_wi_l1, root + 'results/std_mod_wi_l1')
@@ -228,7 +228,7 @@ class TS_rnn(torch.nn.Module):
     def __init__(self, num_hidden = 64, num_layers = 2, dropout = 0.5):
         super(TS_rnn, self).__init__()
         #change the structure of the network
-        num_inp = 17
+        num_inp = 13
         self.rnn = torch.nn.LSTM(input_size = num_inp, hidden_size = num_hidden, num_layers = num_layers, dropout = dropout)
         self.mlp = torch.nn.Sequential(
                 torch.nn.Linear(num_hidden, 16),
