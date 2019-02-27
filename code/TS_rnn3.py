@@ -46,6 +46,7 @@ def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num
     dl_test = DataLoader(test, batch_size = batch_size, shuffle = True)
     # data to be collectd
     test_loss = []
+    tra_loss = []
     test_sig = []
     # weight to be collected: num_layer need to be larger than 2
     mod_wh_l0 = []
@@ -86,9 +87,11 @@ def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num
                         lo.data
                         ))
         test_lo = test_model(dl_test, model, loss)
+	train_lo = test_model(dl_train, model, loss)
         hit_rate = significant_test(dl_test, model, loss)
         # collect data
         test_loss.append(test_lo)
+	tra_loss.append(train_lo)
         test_sig.append(hit_rate)
         mod_wh_l0.append(model.rnn.weight_hh_l0)
         mod_wh_l1.append(model.rnn.weight_hh_l1)
@@ -101,6 +104,7 @@ def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num
             torch.save(model, root + 'models/rnn_' + str(epoch) + '.pkl')
             # save result
             torch.save(test_loss, root + 'results/test_loss.pkl')
+	    torch.save(tra_loss, root + 'results/train_loss.pkl')
             torch.save(test_sig, root + 'results/test_sig.pkl')
             # save weight
             mod_wh_l0 = torch.stack(mod_wh_l0, dim = 0)
