@@ -99,7 +99,7 @@ def run(train_x, train_y, test_x, test_y, model, loss, optimizer, scheduler, num
         mod_wi_l1.append(model.rnn.weight_ih_l1)
         # just for test
         # save model
-        if epoch % 10 == 0:
+        if epoch % 1 == 0:
             # save model
             torch.save(model, root + 'models/rnn_' + str(epoch) + '.pkl')
             # save result
@@ -228,7 +228,7 @@ class TS_rnn(torch.nn.Module):
     def __init__(self, num_hidden = 64, num_layers = 2, dropout = 0.5):
         super(TS_rnn, self).__init__()
         #change the structure of the network
-        num_inp = 13
+        num_inp = 21
         self.rnn = torch.nn.LSTM(input_size = num_inp, hidden_size = num_hidden, num_layers = num_layers, dropout = dropout)
         self.mlp = torch.nn.Sequential(
                 torch.nn.Linear(num_hidden, 16),
