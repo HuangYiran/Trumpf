@@ -1,0 +1,19 @@
+#defining the programm
+cmd = /smartdata/ks6088/code/trumpf/Code/testjob.sh
+# defining the parameters
+args =
+# defining memory requirements
+request_memory = 100 GB
+# defining to use 1 CPU
+request_cpus = 10
+#10.2 Listing current jobs
+# defining the max. run time of the job in hours
++REQUESTED_WALLTIME = 144
+# defining the mail address for notification
+notify_user = riesterer@teco.edu
+notification = Always
+when_to_transfer_output = on_exit_or_evict
+output = $(Cluster)-$(Process)_job.out
+error = $(Cluster)-$(Process)_job.error
+log = $(Cluster)-$(Process)_job.log
+queue 1
