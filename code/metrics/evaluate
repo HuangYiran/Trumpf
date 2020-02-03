@@ -1,0 +1,591 @@
+import numpy as np
+import pandas as pd
+import pickle
+import time
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from torch.utils.data import Dataset, DataLoader
+from tqdm import tqdm
+
+def main():
+    root = '/smartdata/hj7422/Documents/Workplace/Trumpf/'
+    # load model
+    model = CnnLSTM()
+    if torch.cuda.is_available():
+        model = torch.nn.DataParallel(model, devices = [0]).cuda()
+    model.load_state_dict(torch.load(root + 'models/CnnLSTM/cnnlstm_230'))
+    # set parameter and load data
+    batch_size = 30
+    testdata = root + 'data/test_sample_11.pkl'
+    polysdata = root + 'data/matrix_feature.pickle'
+    test = Data(testdata, polysdata)
+    dl_test = DataLoader(test, batch_size = batch_size, shuffle = True)
+    acc = significant_test(dl_test, model)
+    print(acc)
+    with open(root+'results/InceptLSTM_test_acc_top5_10_10.pkl', 'wb') as f:
+        pickle.dump(acc, f)
+    hit_count1 = metric2(dl_test, model)
+    with open(root+'results/InceptLSTM_test_hit_count1_10_10.pkl', 'wb') as f:
+        pickle.dump(hit_count1, f)
+    hit_count2 = metric3(dl_test, model)
+    with open(root+'results/InceptLSTM_test_hit_count2_10_10.pkl', 'wb') as f:
+        pickle.dump(hit_count2, f)
+
+######################
+# evaluation method  #
+######################
+def significant_test(dl_test, model, verbose = False):
+    """
+    看每个batch中真实的最佳，在不在我们预测的前五组中，在的话就算正确预测
+    遍历所有batch，看预测的准确性
+    组分的计算方法是所有配给得分的平均值
+    """
+    model.eval()
+    counter = 0
+    hit = 0
+    miss = 0
+    for batch_idx, dat in enumerate(dl_test):
+        counter += 1
+        # codes to be changed
+        inp, target = dat
+        out = model(inp)
+        #target = target.mean(dim = 1)
+        target = target[:, :].mean(dim = 1).squeeze()
+        out = out.mean(dim = 1).squeeze()
+        #out = out[:, :].mean(dim = 1)
+        if len(inp) > 5:
+            _, top_target = torch.topk(target, 1, largest=False)
+            _, top_predict = torch.topk(out, 5, largest = False)
+            if verbose:
+                print(top_target)
+                print(top_predict)
+                print('*'*10)
+            if top_target in top_predict:
+                hit += 1
+            else:
+                miss += 1
+            if verbose:
+                print('Test Batch: [{}/{} ({:.0f}%)]\tacc: {:.6f}\tTime: {:.16f}'.format(
+                        batch_idx,
+                        int(len(test)/batch_size),
+                        100.*batch_idx/int(len(test)/batch_size),
+                        hit/counter,
+                        time.time()
+                        ))
+    return hit * 1.0/(hit + miss)
+
+def metric2(dl_test, model, verbose = False):
+    """
+    具体看每个batch中，真实最佳组在预测组中排第几位
+    遍历batch，搜集所有排位信息，并搜集在dict中
+    """
+    model.eval()
+    counter = 0
+    hit_count = {}
+    for batch_idx, dat in enumerate(dl_test):
+        counter += 1
+        inp, target = dat
+        out = model(inp)
+        #target = target.mean(dim = 1)
+        #out = out.mean(dim = 1)
+        target = target[:, :].mean(dim = 1).squeeze()
+        out = out[:, :].mean(dim = 1).squeeze()
+        if len(inp) > 5:
+            _, index_top_target = torch.topk(target, 1, largest = False)
+            _, index_rank = torch.topk(out, len(target), largest = False) # sort排序
+            index_rank = index_rank.tolist()
+            index_in_rank = index_rank.index(index_top_target)
+            if index_in_rank not in hit_count.keys():
+                #print('create new key')
+                hit_count[index_in_rank] = 1
+            else:
+                #print('add one')
+                hit_count[index_in_rank] = hit_count[index_in_rank] + 1
+            if verbose:
+                print('Test Batch: [{}/{} ({:.0f}%)]\trank: {:.6f}\tTime: {:.16f}'.format(
+                        batch_idx,
+                        int(len(test)/batch_size),
+                        100.*batch_idx/int(len(test)/batch_size),
+                        index_in_rank,
+                        time.time()
+                        ))
+    return hit_count
+
+def metric3(dl_test, model, verbose = False):
+    """
+    和上面的metric2刚好相反
+    具体看每个batch中，预测最佳组在batch中所有真实组排第几位
+    遍历batch，搜集所有排位信息，并保存在dict中
+    """
+    model.eval()
+    counter = 0
+    hit_count = {}
+    for batch_idx, dat in enumerate(dl_test):
+        counter += 1
+        inp, target = dat
+        out = model(inp)
+        #target = target.mean(dim = 1)
+        #out = out.mean(dim = 1)
+        target = target[:, :].mean(dim = 1).squeeze()
+        out = out[:, :].mean(dim = 1).squeeze()
+        if len(inp) > 5:
+            #_, index_top_target = torch.topk(target, 1, largest = False)
+            _, index_top_out = torch.topk(out, 1, largest = False)
+            #_, index_rank = torch.topk(out, len(target), largest = False)
+            _, index_rank = torch.topk(target, len(target), largest = False)
+            index_rank = index_rank.tolist()
+            index_in_rank = index_rank.index(index_top_out)
+            if index_in_rank not in hit_count.keys():
+                #print('create new key')
+                hit_count[index_in_rank] = 1
+            else:
+                #print('add one')
+                hit_count[index_in_rank] = hit_count[index_in_rank] + 1
+            if verbose:
+                print('Test Batch: [{}/{} ({:.0f}%)]\trank: {:.6f}\tTime: {:.16f}'.format(
+                        batch_idx,
+                        int(len(test)/batch_size),
+                        100.*batch_idx/int(len(test)/batch_size),
+                        index_in_rank,
+                        time.time()
+                        ))
+    return hit_count
+
+####################
+# model definition #
+####################
+class CnnLSTM(nn.Module):
+    def __init__(self, num_classes = 1):
+        super(CnnLSTM, self).__init__()
+        num_cnno = 128
+        num_hidden = 32 
+        self.cnn = nn.Sequential(
+            BasicConv2d(1, 16, kernel_size=3, stride=2),
+            #BasicConv2d(16, 16, kernel_size=3),
+            nn.MaxPool2d(kernel_size = 3, stride = 2),
+            BasicConv2d(16, 32, kernel_size=3, padding=1),
+            nn.MaxPool2d(kernel_size = 3, stride = 2),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Dropout2d())
+        self.lstm = nn.LSTM(32, num_hidden, num_layers = 2, batch_first = True)
+        self.fce = nn.Linear(num_hidden, num_classes)
+    def forward(self, xs):
+        """
+        parameters:
+        -------------
+            xs: input data, list of pictures (with shape (N, 299, 299, 1))
+        """
+        co = []
+        out = []
+        seq_len = len(xs)
+        batch_size, seq_len, width, height = xs.shape
+        #print(xs.shape)
+        for i in range(seq_len):
+            # (N, 299, 299, 1) => (N, num_hidden)
+            #co.append(self.cnn(torch.flatten(x, 1)))
+            #print('%'*20)
+            #print('round: '+ str(i))
+            tmp = self.cnn(xs[:,i,:,:].unsqueeze(1))
+            co.append(tmp.squeeze())
+            #print(tmp.squeeze().shape)
+        co = [i.unsqueeze(1) for i in co]
+        co = torch.cat(co, 1)
+        #print(co.shape)
+        lo, _ = self.lstm(co)
+        for i in range(seq_len):
+            tmp = self.fce(lo[:, i,:])
+            out.append(tmp)
+        out = torch.cat(out, 1)
+        return out.squeeze()
+
+
+class BasicConv2d(nn.Module):
+
+    def __init__(self, in_channels, out_channels, **kwargs):
+        super(BasicConv2d, self).__init__()
+        print(in_channels, out_channels)
+        self.conv = nn.Conv2d(in_channels, out_channels, bias=False, **kwargs)
+        self.bn = nn.BatchNorm2d(out_channels, eps=0.001)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        return F.relu(x, inplace=True)
+
+class IncepLSTM(nn.Module):
+    def __init__(self, num_classes = 1, n = 2):
+        super(IncepLSTM, self).__init__()
+        num_cnno = 128
+        num_hidden = 128
+        self.cnn = nn.Sequential(
+            BasicConv2d(1, int(16/n), kernel_size=3, stride=2),
+            BasicConv2d(int(16/n), int(16/n), kernel_size=3),
+            BasicConv2d(int(16/n), int(32/n), kernel_size=3, padding=1),
+            nn.MaxPool2d(kernel_size = 3, stride = 2),
+            BasicConv2d(int(32/n), int(40/n), kernel_size=1),
+            BasicConv2d(int(40/n), int(96/n), kernel_size=3),
+            nn.MaxPool2d(kernel_size = 3, stride = 2),
+            InceptionA(int(96/n), pool_features=16, n = n), # 224/n + pool_features
+            InceptionA(int(224/n + 16), pool_features=32, n = n),
+            InceptionA(int(224/n + 32), pool_features=32, n = n),
+            InceptionB(int(224/n + 32), n = n), # 480/n + c_in
+            InceptionC(int(480/n + 224/n + 32), channels_7x7=64, n = n), # 768/n
+            InceptionC(int(768/n), channels_7x7=80, n = n),
+            InceptionC(int(768/n), channels_7x7=80, n = n),
+            InceptionC(int(768/n), channels_7x7=80, n = n),
+            InceptionD(int(768/n), n = n), # 512/n + c_in
+            InceptionE(int(768/n + 512/n), n = n), # (320 + 384*4 + 192)/n
+            InceptionE(int(2048/n), n = n),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Dropout2d())
+        self.lstm = nn.LSTM(int(2048/n), num_hidden, num_layers = 2, batch_first = True)
+        self.fce = nn.Linear(num_hidden, num_classes)
+    def forward(self, xs):
+        """
+        parameters:
+        -------------
+            xs: input data, list of pictures (with shape (N, 299, 299, 1))
+        """
+        co = []
+        out = []
+        seq_len = len(xs)
+        batch_size, seq_len, width, height = xs.shape
+        for i in range(seq_len):
+            # (N, 299, 299, 1) => (N, num_hidden)
+            #co.append(self.cnn(torch.flatten(x, 1)))
+            #print('%'*20)
+            #print('round: '+ str(i))
+            tmp = self.cnn(xs[:,i,:,:].unsqueeze(1))
+            co.append(tmp.squeeze())
+            #print(tmp.squeeze().shape)
+        co = [i.unsqueeze(1) for i in co]
+        co = torch.cat(co, 1)
+        lo, _ = self.lstm(co)
+        for i in range(seq_len):
+            tmp = self.fce(lo[:, i,:])
+            out.append(tmp)
+        out = torch.cat(out, 1)
+        return out.squeeze()
+    
+# layer: number of output channel 
+# InceptionA(in_channels, pool_features): 224/n + pool_features; H, W
+# InceptionB(in_channels): 480/n + in_channels; H/2, W/2
+# InceptionC(in_channels, channels_7x7): 768/n; H, W
+# InceptionD(in_channels): 512/n + in_channels; H/2, W/2
+# InceptionE(in_channels): 1280/n; H, W
+# InceptionAux(in_channels, pool_features):
+# BasicConv2d(in_channels, out_channels): Conv2d + BN
+class InceptionA(nn.Module):
+    def __init__(self, in_channels, pool_features, n = 2):
+        """
+        n = 1, 2, 4, 6
+        """
+        super(InceptionA, self).__init__()
+        self.branch1x1 = BasicConv2d(in_channels, int(64/n), kernel_size=1)
+
+        self.branch5x5_1 = BasicConv2d(in_channels, int(48/n), kernel_size=1)
+        self.branch5x5_2 = BasicConv2d(int(48/n), int(64/n), kernel_size=5, padding=2)
+
+        self.branch3x3dbl_1 = BasicConv2d(in_channels, int(64/n), kernel_size=1)
+        self.branch3x3dbl_2 = BasicConv2d(int(64/n), int(96/n), kernel_size=3, padding=1)
+        self.branch3x3dbl_3 = BasicConv2d(int(96/n), int(96/n), kernel_size=3, padding=1)
+
+        self.branch_pool = BasicConv2d(in_channels, pool_features, kernel_size=1)
+
+    def forward(self, x):
+        #print('InceptionA')
+        branch1x1 = self.branch1x1(x)
+
+        branch5x5 = self.branch5x5_1(x)
+        branch5x5 = self.branch5x5_2(branch5x5)
+
+        branch3x3dbl = self.branch3x3dbl_1(x)
+        branch3x3dbl = self.branch3x3dbl_2(branch3x3dbl)
+        branch3x3dbl = self.branch3x3dbl_3(branch3x3dbl)
+
+        branch_pool = F.avg_pool2d(x, kernel_size=3, stride=1, padding=1)
+        branch_pool = self.branch_pool(branch_pool)
+
+        outputs = [branch1x1, branch5x5, branch3x3dbl, branch_pool]
+        return torch.cat(outputs, 1)
+
+
+class InceptionB(nn.Module):
+
+    def __init__(self, in_channels, n = 2):
+        """
+        n = 1, 2, 4, 6
+        """
+        super(InceptionB, self).__init__()
+        self.branch3x3 = BasicConv2d(in_channels, int(384/n), kernel_size=3, stride=2)
+
+        self.branch3x3dbl_1 = BasicConv2d(in_channels, int(64/n), kernel_size=1)
+        self.branch3x3dbl_2 = BasicConv2d(int(64/n), int(96/n), kernel_size=3, padding=1)
+        self.branch3x3dbl_3 = BasicConv2d(int(96/n), int(96/n), kernel_size=3, stride=2)
+
+    def forward(self, x):
+        #print('InceptionB')
+        branch3x3 = self.branch3x3(x)
+
+        branch3x3dbl = self.branch3x3dbl_1(x)
+        branch3x3dbl = self.branch3x3dbl_2(branch3x3dbl)
+        branch3x3dbl = self.branch3x3dbl_3(branch3x3dbl)
+
+        branch_pool = F.max_pool2d(x, kernel_size=3, stride=2)
+
+        outputs = [branch3x3, branch3x3dbl, branch_pool]
+        return torch.cat(outputs, 1)
+
+
+class InceptionC(nn.Module):
+
+    def __init__(self, in_channels, channels_7x7, n = 2):
+        """
+        n = 1, 2, 4, 6
+        """
+        super(InceptionC, self).__init__()
+        self.branch1x1 = BasicConv2d(in_channels, int(192/n), kernel_size=1)
+
+        c7 = channels_7x7
+        self.branch7x7_1 = BasicConv2d(in_channels, c7, kernel_size=1)
+        self.branch7x7_2 = BasicConv2d(c7, c7, kernel_size=(1, 7), padding=(0, 3))
+        self.branch7x7_3 = BasicConv2d(c7, int(192/n), kernel_size=(7, 1), padding=(3, 0))
+
+        self.branch7x7dbl_1 = BasicConv2d(in_channels, c7, kernel_size=1)
+        self.branch7x7dbl_2 = BasicConv2d(c7, c7, kernel_size=(7, 1), padding=(3, 0))
+        self.branch7x7dbl_3 = BasicConv2d(c7, c7, kernel_size=(1, 7), padding=(0, 3))
+        self.branch7x7dbl_4 = BasicConv2d(c7, c7, kernel_size=(7, 1), padding=(3, 0))
+        self.branch7x7dbl_5 = BasicConv2d(c7, int(192/n), kernel_size=(1, 7), padding=(0, 3))
+
+        self.branch_pool = BasicConv2d(in_channels, int(192/n), kernel_size=1)
+
+    def forward(self, x):
+        #print('InceptionC')
+        branch1x1 = self.branch1x1(x)
+        #print('InceptionC - 1')
+        branch7x7 = self.branch7x7_1(x)
+        branch7x7 = self.branch7x7_2(branch7x7)
+        branch7x7 = self.branch7x7_3(branch7x7)
+        #print('InceptionC - 2')
+        branch7x7dbl = self.branch7x7dbl_1(x)
+        branch7x7dbl = self.branch7x7dbl_2(branch7x7dbl)
+        branch7x7dbl = self.branch7x7dbl_3(branch7x7dbl)
+        branch7x7dbl = self.branch7x7dbl_4(branch7x7dbl)
+        branch7x7dbl = self.branch7x7dbl_5(branch7x7dbl)
+        #print('InceptionC - 3')
+        branch_pool = F.avg_pool2d(x, kernel_size=3, stride=1, padding=1)
+        branch_pool = self.branch_pool(branch_pool)
+        #print('InceptionC - 4')
+        outputs = [branch1x1, branch7x7, branch7x7dbl, branch_pool]
+        return torch.cat(outputs, 1)
+
+
+class InceptionD(nn.Module):
+
+    def __init__(self, in_channels, n = 2):
+        """
+        n = 1, 2, 4, 6
+        """
+        super(InceptionD, self).__init__()
+        self.branch3x3_1 = BasicConv2d(in_channels, int(192/n), kernel_size=1)
+        self.branch3x3_2 = BasicConv2d(int(192/n), int(320/n), kernel_size=3, stride=2)
+
+        self.branch7x7x3_1 = BasicConv2d(in_channels, int(192/n), kernel_size=1)
+        self.branch7x7x3_2 = BasicConv2d(int(192/n), int(192/n), kernel_size=(1, 7), padding=(0, 3))
+        self.branch7x7x3_3 = BasicConv2d(int(192/n), int(192/n), kernel_size=(7, 1), padding=(3, 0))
+        self.branch7x7x3_4 = BasicConv2d(int(192/n), int(192/n), kernel_size=3, stride=2)
+
+    def forward(self, x):
+        #print('InceptionD')
+        branch3x3 = self.branch3x3_1(x)
+        branch3x3 = self.branch3x3_2(branch3x3)
+
+        branch7x7x3 = self.branch7x7x3_1(x)
+        branch7x7x3 = self.branch7x7x3_2(branch7x7x3)
+        branch7x7x3 = self.branch7x7x3_3(branch7x7x3)
+        branch7x7x3 = self.branch7x7x3_4(branch7x7x3)
+
+        branch_pool = F.max_pool2d(x, kernel_size=3, stride=2)
+        outputs = [branch3x3, branch7x7x3, branch_pool]
+        return torch.cat(outputs, 1)
+
+
+class InceptionE(nn.Module):
+
+    def __init__(self, in_channels, n = 2):
+        """
+        n = 1, 2, 4, 6
+        """
+        super(InceptionE, self).__init__()
+        self.branch1x1 = BasicConv2d(in_channels, int(320/n), kernel_size=1)
+
+        self.branch3x3_1 = BasicConv2d(in_channels, int(384/n), kernel_size=1)
+        self.branch3x3_2a = BasicConv2d(int(384/n), int(384/n), kernel_size=(1, 3), padding=(0, 1))
+        self.branch3x3_2b = BasicConv2d(int(384/n), int(384/n), kernel_size=(3, 1), padding=(1, 0))
+
+        self.branch3x3dbl_1 = BasicConv2d(in_channels, int(448/n), kernel_size=1)
+        self.branch3x3dbl_2 = BasicConv2d(int(448/n), int(384/n), kernel_size=3, padding=1)
+        self.branch3x3dbl_3a = BasicConv2d(int(384/n), int(384/n), kernel_size=(1, 3), padding=(0, 1))
+        self.branch3x3dbl_3b = BasicConv2d(int(384/n), int(384/n), kernel_size=(3, 1), padding=(1, 0))
+
+        self.branch_pool = BasicConv2d(in_channels, int(192/n), kernel_size=1)
+
+    def forward(self, x):
+        #print('InceptionE')
+        branch1x1 = self.branch1x1(x)
+        #print('InceptionE - 1')
+        branch3x3 = self.branch3x3_1(x)
+        branch3x3 = [
+            self.branch3x3_2a(branch3x3),
+            self.branch3x3_2b(branch3x3),
+        ]
+        branch3x3 = torch.cat(branch3x3, 1)
+        #print('InceptionE - 2')
+        branch3x3dbl = self.branch3x3dbl_1(x)
+        branch3x3dbl = self.branch3x3dbl_2(branch3x3dbl)
+        branch3x3dbl = [
+            self.branch3x3dbl_3a(branch3x3dbl),
+            self.branch3x3dbl_3b(branch3x3dbl),
+        ]
+        branch3x3dbl = torch.cat(branch3x3dbl, 1)
+        #print('InceptionE - 3')
+        branch_pool = F.avg_pool2d(x, kernel_size=3, stride=1, padding=1)
+        branch_pool = self.branch_pool(branch_pool)
+        #print(branch1x1.shape, branch3x3.shape, branch3x3dbl.shape, branch_pool.shape)
+        outputs = [branch1x1, branch3x3, branch3x3dbl, branch_pool]
+        return torch.cat(outputs, 1)
+
+
+class InceptionAux(nn.Module):
+
+    def __init__(self, in_channels, num_classes, n = 2):
+        """
+        n = 1, 2, 4, 6
+        """
+        super(InceptionAux, self).__init__()
+        self.conv0 = BasicConv2d(in_channels, int(128/n), kernel_size=1)
+        self.conv1 = BasicConv2d(int(128/n), int(768/n), kernel_size=5)
+        self.conv1.stddev = 0.01
+        self.fc = nn.Linear(int(768/n), num_classes)
+        self.fc.stddev = 0.001
+
+    def forward(self, x):
+        # N x 768 x 17 x 17
+        x = F.avg_pool2d(x, kernel_size=5, stride=3)
+        # N x 768 x 5 x 5
+        x = self.conv0(x)
+        # N x 128 x 5 x 5
+        x = self.conv1(x)
+        # N x 768 x 1 x 1
+        # Adaptive average pooling
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        # N x 768 x 1 x 1
+        x = torch.flatten(x, 1)
+        # N x 768
+        x = self.fc(x)
+        # N x 1000
+        return x
+
+
+class BasicConv2d(nn.Module):
+
+    def __init__(self, in_channels, out_channels, **kwargs):
+        super(BasicConv2d, self).__init__()
+        print(in_channels, out_channels)
+        self.conv = nn.Conv2d(in_channels, out_channels, bias=False, **kwargs)
+        self.bn = nn.BatchNorm2d(out_channels, eps=0.001)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        return F.relu(x, inplace=True)
+
+class Data():
+    def __init__(self, x, y):
+        self.data = {}
+        self.data['data'] = self.add_file(x) # type of pandas 
+        self.data['polys'] = self.add_file(y) # type of pandas
+        self._combine()
+        self.len = len(self.data['Xs'])
+    
+    def add_file(self, path):
+        # read pickle file with pandas
+        out = pd.read_pickle(path)
+        out = out.astype({'Rot': 'float'})
+        #return out.iloc[:200000, :]
+        return out
+    
+    def _combine(self):
+        jobs = self.data['data']['Jobid'].unique()
+        # shuffle
+        random.shuffle(jobs)
+        Xs = []
+        ys = []
+        counter = 0
+        for i in jobs:
+            if counter > 700:
+                break
+            dat = self.data['data'][self.data['data']['Jobid'] == i]
+            dat = dat.merge(self.data['polys'], on=['bounding box', 'Rot'], how = 'left')[['matrix', 'score']]
+            dat_x = np.concatenate(dat[['matrix']].values.tolist(), axis = 0) # shape of [50, 350, 350]
+            dat_y = dat[['score']].values # shape of [50, 1]
+            dat_x = torch.from_numpy(dat_x).type('torch.FloatTensor')
+            dat_y = torch.from_numpy(dat_y).type('torch.FloatTensor')
+            if torch.cuda.is_available():
+                dat_x = dat_x.cuda()
+                dat_y = dat_y.cuda()
+            Xs.append(dat_x)
+            ys.append(dat_y)
+            counter += 1
+        del self.data['data']
+        self.data['Xs'] = Xs
+        self.data['ys'] = ys
+
+    def __len__(self):
+        return self.len
+    
+    def __getitem__(self, index):
+        return self.data['Xs'][index], self.data['ys'][index]
+
+
+class Data2():
+    def __init__(self, x, y):
+        self.data = {}
+        self.data['data'] = self.add_file(x) # type of pandas 
+        self.data['polys'] = self.add_file(y) # type of pandas
+        self.jobs = self.data['data']['Jobid'].unique()
+        self.len = len(self.jobs)
+    
+    def add_file(self, path):
+        # read pickle file with pandas
+        out = pd.read_pickle(path)
+        out = out.astype({'Rot': 'float'})
+        return out
+    
+    def __len__(self):
+        return self.len
+    
+    def __getitem__(self, index):
+        # get item with jobid
+        dat = self.data['data'][self.data['data']['Jobid'] == self.jobs[index]]
+        # merge 
+        dat = dat.merge(self.data['polys'], on=['bounding box', 'Rot'], how = 'left')[['matrix', 'score']]
+        # transform and concatenate and split data 
+        dat_x = np.concatenate(dat[['matrix']].values.tolist(), axis = 0) # shape of [50, 350, 350]
+        dat_y = dat[['score']].values # shape of [50, 1]
+        # transofrom to torch
+        dat_x = torch.from_numpy(dat_x).type('torch.FloatTensor')
+        dat_y = torch.from_numpy(dat_y).type('torch.FloatTensor')
+        # move to gpu if exist
+        if torch.cuda.is_available():
+            dat_x = dat_x.cuda()
+            dat_y = dat_y.cuda()
+        return dat_x, dat_y
+
+
+
+
+if __name__ == '__main__':
+    main()
